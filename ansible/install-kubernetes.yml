@@ -1,0 +1,88 @@
+---
+- name: Installation de Kubernetes sur tous les noeuds
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Desactiver le swap
+      command: swapoff -a
+
+    - name: Desactiver le swap au demarrage
+      replace:
+        path: /etc/fstab
+        regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+        replace: '# \1'
+
+    - name: Charger les modules kernel necessaires
+      modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - overlay
+        - br_netfilter
+
+    - name: Configurer les parametres sysctl pour Kubernetes
+      sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: yes
+      loop:
+        - { key: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+        - { key: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+        - { key: 'net.ipv4.ip_forward', value: '1' }
+
+    - name: Installer les dependances Kubernetes
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+        state: present
+        update_cache: yes
+
+    - name: Ajouter la cle GPG Kubernetes
+      apt_key:
+        url: https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key
+        state: present
+
+    - name: Ajouter le depot Kubernetes
+      apt_repository:
+        repo: "deb https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /"
+        state: present
+        filename: kubernetes
+
+    - name: Installer kubeadm kubelet kubectl
+      apt:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+        update_cache: yes
+
+    - name: Bloquer les mises a jour automatiques de Kubernetes
+      dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop:
+        - kubelet
+        - kubeadm
+        - kubectl
+
+    - name: Configurer containerd
+      shell: |
+        containerd config default | sudo tee /etc/containerd/config.toml
+        sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+
+    - name: Redemarrer containerd
+      systemd:
+        name: containerd
+        state: restarted
+        enabled: yes
+
+    - name: Activer et demarrer kubelet
+      systemd:
+        name: kubelet
+        state: started
+        enabled: yes

@@ -1,0 +1,47 @@
+---
+- name: Installation de Docker sur tous les noeuds
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Mettre a jour apt
+      apt:
+        update_cache: yes
+
+    - name: Installer les dependances Docker
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+
+    - name: Ajouter la cle GPG Docker
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Ajouter le depot Docker
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu jammy stable"
+        state: present
+
+    - name: Installer Docker
+      apt:
+        name: docker-ce
+        state: present
+        update_cache: yes
+
+    - name: Ajouter azureuser au groupe docker
+      user:
+        name: azureuser
+        groups: docker
+        append: yes
+
+    - name: Demarrer et activer Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: yes

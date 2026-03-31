@@ -1,0 +1,62 @@
+---
+- name: Initialiser le master Kubernetes
+  hosts: master
+  become: yes
+  tasks:
+
+    - name: Initialiser le cluster kubeadm
+      command: >
+        kubeadm init
+        --apiserver-advertise-address=20.229.26.85
+        --pod-network-cidr=10.244.0.0/16
+        --ignore-preflight-errors=all
+      register: kubeadm_output
+      args:
+        creates: /etc/kubernetes/admin.conf
+
+    - name: Creer le dossier .kube pour azureuser
+      file:
+        path: /home/azureuser/.kube
+        state: directory
+        owner: azureuser
+        group: azureuser
+        mode: '0755'
+
+    - name: Copier le fichier admin.conf
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/azureuser/.kube/config
+        remote_src: yes
+        owner: azureuser
+        group: azureuser
+        mode: '0644'
+
+    - name: Installer le plugin reseau Flannel
+      become: no
+      command: kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
+
+    - name: Recuperer le token de join
+      command: kubeadm token create --print-join-command
+      register: join_command
+
+    - name: Sauvegarder la commande join
+      local_action:
+        module: copy
+        content: "{{ join_command.stdout }}"
+        dest: /tmp/join_command.sh
+
+- name: Joindre les workers au cluster
+  hosts: workers
+  become: yes
+  tasks:
+
+    - name: Copier la commande join
+      copy:
+        src: /tmp/join_command.sh
+        dest: /tmp/join_command.sh
+        mode: '0755'
+
+    - name: Joindre le worker au cluster
+      command: bash /tmp/join_command.sh --ignore-preflight-errors=all
+      args:
+        creates: /etc/kubernetes/kubelet.conf
