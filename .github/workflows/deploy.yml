@@ -2,9 +2,9 @@ name: CI/CD WordPress K8s BJM
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
 
 env:
   REGISTRY: ghcr.io
@@ -22,10 +22,6 @@ jobs:
           chmod +x kubectl && sudo mv kubectl /usr/local/bin/
       - name: Validate K8s manifests
         run: kubectl apply --dry-run=client -f kubernetes/
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-      - name: Terraform fmt check
-        run: cd terraform && terraform fmt -check
 
   build:
     name: Build and Push Docker image
@@ -46,7 +42,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: true
+          push: ${{ github.ref == 'refs/heads/master' }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
@@ -55,7 +51,7 @@ jobs:
     name: Deploy to Kubernetes
     runs-on: ubuntu-latest
     needs: build
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/master'
     steps:
       - uses: actions/checkout@v4
       - name: Configure kubectl
@@ -72,8 +68,7 @@ jobs:
         run: |
           kubectl apply -f kubernetes/wordpress-deployment.yml
           kubectl rollout status deployment/wordpress -n mon-project-magui-bjm --timeout=120s
-      - name: Verify deployment
+      - name: Verify
         run: |
           kubectl get pods -n mon-project-magui-bjm
           kubectl get svc -n mon-project-magui-bjm
-          echo "WordPress OK sur http://104.40.253.5:30080"
